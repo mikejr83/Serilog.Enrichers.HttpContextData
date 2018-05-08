@@ -1,12 +1,10 @@
-﻿// Includes code inspired from Nick Craver's StackExchange.Exceptional 
-// See https://github.com/NickCraver/StackExchange.Exceptional
-
+﻿using Serilog.Configuration;
+using Serilog.Events;
 using System;
 using System.Collections.Generic;
 using System.Collections.Specialized;
+using System.Text;
 using System.Text.RegularExpressions;
-using Serilog.Configuration;
-using Serilog.Events;
 
 namespace Serilog.Enrichers.HttpContextData
 {

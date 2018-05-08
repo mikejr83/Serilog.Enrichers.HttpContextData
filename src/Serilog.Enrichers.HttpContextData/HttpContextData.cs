@@ -1,15 +1,14 @@
-﻿// Includes code inspired from Nick Craver's StackExchange.Exceptional 
-// See https://github.com/NickCraver/StackExchange.Exceptional
-
+﻿using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Primitives;
+using Newtonsoft.Json;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Diagnostics;
-using System.Web;
 using System.Collections.Specialized;
+using System.Diagnostics;
 using System.Linq;
+using System.Text;
 using System.Text.RegularExpressions;
-using System.Web.Script.Serialization;
 
 namespace Serilog.Enrichers.HttpContextData
 {
@@ -31,7 +30,6 @@ namespace Serilog.Enrichers.HttpContextData
         private ConcurrentDictionary<string, string> _serverVarRegexLogFilters = new ConcurrentDictionary<string, string>();
         private Regex _dataIncludeRegex;
 
-
         private HttpContextDataLogFilterSettings _filterSettings;
         private HttpContextDataLogFilterSettings FilterSettings
         {
@@ -43,7 +41,7 @@ namespace Serilog.Enrichers.HttpContextData
             }
         }
 
-        public HttpContextData(HttpContextBase context) : this(null, context, null)
+        public HttpContextData(HttpContext context) : this(null, context, null)
         {
         }
 
@@ -51,7 +49,7 @@ namespace Serilog.Enrichers.HttpContextData
         {
         }
 
-        public HttpContextData(Exception e, HttpContextBase context, HttpContextDataLogFilterSettings filterSettings)
+        public HttpContextData(Exception e, HttpContext context, HttpContextDataLogFilterSettings filterSettings)
         {
             MachineName = Environment.MachineName;
             FilterSettings = filterSettings;
@@ -68,10 +66,10 @@ namespace Serilog.Enrichers.HttpContextData
             _cookieLogFilters = new ConcurrentDictionary<string, string>();
             _cookieRegexLogFilters = new ConcurrentDictionary<string, string>();
             _filterSettings?.CookieFilters?.ToList().ForEach(flf =>
-                {
-                    if (!flf.NameIsRegex) _cookieLogFilters[flf.Name] = flf.ReplaceWith ?? "";
-                    else if (!String.IsNullOrWhiteSpace(flf.Name)) _cookieRegexLogFilters[flf.Name] = flf.ReplaceWith ?? "";
-                }
+            {
+                if (!flf.NameIsRegex) _cookieLogFilters[flf.Name] = flf.ReplaceWith ?? "";
+                else if (!String.IsNullOrWhiteSpace(flf.Name)) _cookieRegexLogFilters[flf.Name] = flf.ReplaceWith ?? "";
+            }
             );
 
 
@@ -149,33 +147,30 @@ namespace Serilog.Enrichers.HttpContextData
 
         }
 
-        private void SetContextProperties(HttpContextBase context)
+        private void SetContextProperties(HttpContext context)
         {
             if (context == null) return;
 
             var request = context.Request;
 
-            Func<Func<HttpRequestBase, NameValueCollection>, NameValueCollection> tryGetCollection = getter =>
+            Func<Func<HttpRequest, IEnumerable<KeyValuePair<string, StringValues>>>, IEnumerable<KeyValuePair<string, StringValues>>> tryGetCollection = getter =>
             {
                 try
                 {
-                    return new NameValueCollection(getter(request));
+                    return new List<KeyValuePair<string, StringValues>>(getter(request));
                 }
-                catch (HttpRequestValidationException e)
+                catch (Exception e)
                 {
                     Trace.WriteLine("Error parsing collection: " + e.Message);
-                    return new NameValueCollection { { CollectionErrorKey, e.Message } };
+
+                    return new List<KeyValuePair<string, StringValues>> { { new KeyValuePair<string, StringValues>(CollectionErrorKey, e.Message) } };
                 }
             };
 
             StatusCode = context.Response?.StatusCode;
-            _httpMethod = context.Request.HttpMethod;
+            _httpMethod = context.Request.Method;
 
-            ServerVariables = _serverVarLogFilters?.ContainsKey("") == true
-                ? new NameValueCollection()
-                : tryGetCollection(r => r.ServerVariables);
-
-            QueryString = tryGetCollection(r => r.QueryString);
+            QueryString = tryGetCollection(r => r.Query);
             Form = _formLogFilters?.ContainsKey("") == true ? new NameValueCollection()
                 : tryGetCollection(r => r.Form);
 
@@ -185,7 +180,7 @@ namespace Serilog.Enrichers.HttpContextData
             FilterRequestHeaderData(request);
         }
 
-        private void FilterRequestHeaderData(HttpRequestBase request)
+        private void FilterRequestHeaderData(HttpRequest request)
         {
             if (_headerLogFilters?.ContainsKey("") == true)
             {
@@ -194,18 +189,18 @@ namespace Serilog.Enrichers.HttpContextData
             else
             {
                 RequestHeaders = new NameValueCollection(request.Headers.Count);
-                foreach (var header in request.Headers.AllKeys)
+                foreach (var header in request.Headers)
                 {
                     // Cookies are handled above, no need to repeat
-                    if (string.Compare(header, "Cookie", StringComparison.OrdinalIgnoreCase) == 0)
+                    if (string.Compare(header.Key, "Cookie", StringComparison.OrdinalIgnoreCase) == 0)
                         continue;
 
-                    if (request.Headers[header] != null)
+                    if (!string.IsNullOrWhiteSpace(request.Headers[header.Key]))
                     {
                         string val = null;
-                        if (!(_headerLogFilters?.TryGetValue(header, out val) ?? false)) // No match by name
+                        if (!(_headerLogFilters?.TryGetValue(header.Key, out val) ?? false)) // No match by name
                         {
-                            var regexMatch = _headerRegexLogFilters.Where(r => Regex.IsMatch(header, r.Key, RegexOptions.IgnoreCase | RegexOptions.Singleline))
+                            var regexMatch = _headerRegexLogFilters.Where(r => Regex.IsMatch(header.Key, r.Key, RegexOptions.IgnoreCase | RegexOptions.Singleline))
                                 .Select(r => new { Key = r.Key, Value = r.Value })
                                 .FirstOrDefault();
 
@@ -213,13 +208,13 @@ namespace Serilog.Enrichers.HttpContextData
                         }
 
                         if (val == "") continue; // Discard header value
-                        else RequestHeaders[header] = val ?? request.Headers[header];
+                        else RequestHeaders[header.Key] = val ?? request.Headers[header.Key];
                     }
                 }
             }
         }
 
-        private void FilterCookies(HttpRequestBase request)
+        private void FilterCookies(HttpRequest request)
         {
             try
             {
@@ -234,17 +229,17 @@ namespace Serilog.Enrichers.HttpContextData
                     for (var i = 0; i < request.Cookies.Count; i++)
                     {
                         var name = request.Cookies[i].Name;
-                        string val=null;
-                        if(!(_cookieLogFilters?.TryGetValue(name, out val)??false)) // No match by name
+                        string val = null;
+                        if (!(_cookieLogFilters?.TryGetValue(name, out val) ?? false)) // No match by name
                         {
                             var regexMatch = _cookieRegexLogFilters.Where(r => Regex.IsMatch(name, r.Key, RegexOptions.IgnoreCase | RegexOptions.Singleline))
-                                .Select(r => new { Key = r.Key, Value = r.Value})
+                                .Select(r => new { Key = r.Key, Value = r.Value })
                                 .FirstOrDefault();
 
                             val = regexMatch?.Value;
                         }
 
-                        if (val == "" ) Cookies.Remove(name); // Discard cookie value
+                        if (val == "") Cookies.Remove(name); // Discard cookie value
                         else Cookies.Add(name, val ?? request.Cookies[i].Value);
                     }
                 }
@@ -356,19 +351,16 @@ namespace Serilog.Enrichers.HttpContextData
 
         public int? StatusCode { get; set; }
 
-        [ScriptIgnore]
-        public NameValueCollection ServerVariables { get; set; }
+        [JsonIgnore]
+        public IEnumerable<KeyValuePair<string, StringValues>> QueryString { get; set; }
 
-        [ScriptIgnore]
-        public NameValueCollection QueryString { get; set; }
+        [JsonIgnore]
+        public IEnumerable<KeyValuePair<string, StringValues>> Form { get; set; }
 
-        [ScriptIgnore]
-        public NameValueCollection Form { get; set; }
+        [JsonIgnore]
+        public IEnumerable<KeyValuePair<string, StringValues>> Cookies { get; set; }
 
-        [ScriptIgnore]
-        public NameValueCollection Cookies { get; set; }
-
-        [ScriptIgnore]
+        [JsonIgnore]
         public NameValueCollection RequestHeaders { get; set; }
 
         /// <summary>
@@ -421,15 +413,13 @@ namespace Serilog.Enrichers.HttpContextData
 
         public string ToJson()
         {
-            var serializer = new JavaScriptSerializer();
-            return serializer.Serialize(this);
+            return JsonConvert.SerializeObject(this);
         }
 
         public string ToDetailedJson()
         {
-            var serializer = new JavaScriptSerializer();
             var dto = ToDto();
-            return serializer.Serialize(dto);
+            return JsonConvert.SerializeObject(dto);
         }
 
         public object ToDto()
@@ -460,6 +450,7 @@ namespace Serilog.Enrichers.HttpContextData
         {
             return !String.IsNullOrWhiteSpace(ExceptionMessage) ? ExceptionMessage : base.ToString();
         }
+
         /// <summary>
         /// Serialization class in place of the NameValueCollection pairs
         /// </summary>
@@ -499,8 +490,5 @@ namespace Serilog.Enrichers.HttpContextData
             }
             return result;
         }
-
-
     }
-
 }

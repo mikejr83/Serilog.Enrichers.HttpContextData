@@ -1,11 +1,9 @@
-﻿// Includes code inspired from Nick Craver's StackExchange.Exceptional 
-// See https://github.com/NickCraver/StackExchange.Exceptional
-
+﻿using System;
 using System.Collections.Generic;
+using System.Text;
 
 namespace Serilog.Enrichers.HttpContextData
 {
-
     public class HttpContextDataLogFilterSettings
     {
 
@@ -39,24 +37,24 @@ namespace Serilog.Enrichers.HttpContextData
 
 
     }
-}
 
-public class HttpContextDataLogFilter
-{
-    /// <summary>
-    /// The form parameter name to ignore
-    /// </summary>
-    public string Name { get; set; }
+    public class HttpContextDataLogFilter
+    {
+        /// <summary>
+        /// The form parameter name to ignore
+        /// </summary>
+        public string Name { get; set; }
 
-    /// <summary>
-    /// The value to log instead of the real value
-    /// </summary>
-    /// <remarks>If value is empty string the key will be totally removed</remarks>
-    public string ReplaceWith { get; set; }
+        /// <summary>
+        /// The value to log instead of the real value
+        /// </summary>
+        /// <remarks>If value is empty string the key will be totally removed</remarks>
+        public string ReplaceWith { get; set; }
 
-    /// <summary>
-    /// Specify if the value in Name property is a regex
-    /// </summary>
-    public bool NameIsRegex { get; set; } = false;
+        /// <summary>
+        /// Specify if the value in Name property is a regex
+        /// </summary>
+        public bool NameIsRegex { get; set; } = false;
 
+    }
 }

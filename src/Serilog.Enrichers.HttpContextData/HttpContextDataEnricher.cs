@@ -1,7 +1,8 @@
-﻿using System.Collections.Concurrent;
-using System.Web;
-using Serilog.Core;
+﻿using Serilog.Core;
 using Serilog.Events;
+using System;
+using System.Collections.Generic;
+using System.Text;
 
 namespace Serilog.Enrichers.HttpContextData
 {
@@ -15,7 +16,7 @@ namespace Serilog.Enrichers.HttpContextData
 
         public HttpContextDataEnricher()
         {
-            
+
         }
 
         public HttpContextDataEnricher(LogEventLevel minimumLogLevel) : this()
@@ -23,7 +24,7 @@ namespace Serilog.Enrichers.HttpContextData
             MinimumLogLevel = minimumLogLevel;
         }
 
-        public HttpContextDataEnricher(HttpContextDataLogFilterSettings filterSettings) : this(LogEventLevel.Error,filterSettings)
+        public HttpContextDataEnricher(HttpContextDataLogFilterSettings filterSettings) : this(LogEventLevel.Error, filterSettings)
         {
         }
 
@@ -35,8 +36,8 @@ namespace Serilog.Enrichers.HttpContextData
         public void Enrich(LogEvent logEvent, ILogEventPropertyFactory propertyFactory)
         {
             if (logEvent.Level < MinimumLogLevel)
-                return;    
-                       
+                return;
+
             AddLogEventProperties(logEvent, propertyFactory);
         }
 
